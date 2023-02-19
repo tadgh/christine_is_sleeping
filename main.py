@@ -1,0 +1,124 @@
+import os
+import sys
+from contextlib import closing
+
+import discord
+from boto3 import Session
+from discord import VoiceClient, Message, Member, VoiceState
+from discord.ext import commands
+from discord.ext.commands import Context, Cog
+import os
+BOT_KEY = os.getenv("BOT_KEY")
+
+session = Session()
+polly = session.client("polly")
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix='$', intents=intents)
+BOT_USER_ID = 1071587804938768474
+COG_NAME = "GhostOwnerCog"
+
+class GhostOwnerCog(Cog):
+
+    def __init__(self, bot: commands.Bot, owner, voice_client: VoiceClient, speaker: str):
+        self.bot = bot
+        self.owner = owner
+        self.voice_client = voice_client
+        self.speaker = speaker
+
+    @Cog.listener()
+    async def on_message(self, message: Message):
+        if message.content.startswith("$"):
+            return
+        if message.author.id == self.owner.id:
+            print(f'Message from {message.author}: {message.content}')
+            await self.play_message_in_current_channel(message.content)
+
+    @Cog.listener()
+    async def on_voice_state_update(self, member: Member, before: VoiceState, after: VoiceState):
+        if member.id == self.owner.id:
+            if after.channel is None:
+                print("Removing Cog!")
+                await self.bot.remove_cog(COG_NAME)
+            elif before.channel != after.channel:
+                print(f"Swapping to channel: {after.channel.name}")
+                await self.voice_client.disconnect()
+                self.voice_client = await after.channel.connect()
+
+
+    async def play_message_in_current_channel(self, message_content):
+        response = polly.synthesize_speech(Text=f"{message_content}", OutputFormat="mp3",
+                                           VoiceId=self.speaker, Engine="neural")
+        if "AudioStream" in response:
+            with closing(response["AudioStream"]) as stream:
+                output = os.path.join("/", "home", "tadgh", "projects", "christine_is_sleeping", "result.mp3")
+
+                try:
+                    # Open a file for writing the output as a binary stream
+                    with open(output, "wb") as file:
+                        file.write(stream.read())
+                except IOError as error:
+                    # Could not write to file, exit gracefully
+                    print(error)
+                    sys.exit(-1)
+        output = os.path.join("/", "home", "tadgh", "projects", "christine_is_sleeping", "result.mp3")
+        self.voice_client.play(discord.FFmpegPCMAudio(output))
+
+
+
+    async def cog_unload(self) -> None:
+        """
+        Teardown method
+        """
+        await self.play_message_in_current_channel("Goodbye!")
+        await self.voice_client.disconnect()
+
+
+@bot.command()
+async def join(ctx: Context, speaker):
+    if not bot.get_cog(COG_NAME):
+        guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
+        member = guild.get_member(ctx.author.id)
+        await guild.me.edit(nick=ctx.author.display_name + "-ghost")
+        vc = await member.voice.channel.connect()
+        if not speaker:
+            speaker = "Matthew"
+        speaker = speaker.split(" ")[0].capitalize()
+        await bot.add_cog(GhostOwnerCog(bot, ctx.author, vc, speaker))
+    else:
+        await ctx.send("I'm already in a channel!")
+
+
+@bot.command()
+async def leave(ctx):
+    cog = bot.get_cog(COG_NAME)
+    if cog:
+        guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
+        await guild.me.edit(nick="The Medium")
+        await bot.remove_cog(COG_NAME)
+    else:
+        await ctx.send("I'm not currently in a channel!")
+
+@bot.command()
+async def speakers(ctx):
+    await ctx.send(
+        """
+        Matthew
+        Kevin
+        Kimberly
+        Ivy
+        Joey
+        Aria
+        Kajal
+        Léa
+        Rémi
+        Arthur
+        Amy
+        """
+    )
+
+bot.run(BOT_KEY)
+
+
