@@ -8,7 +8,9 @@ from discord import VoiceClient, Message, Member, VoiceState
 from discord.ext import commands
 from discord.ext.commands import Context, Cog
 import os
+
 BOT_KEY = os.getenv("BOT_KEY")
+VOICES = ["Lotte", "Maxim", "Ayanda", "Salli", "Ola", "Arthur", "Tomoko", "Remi", "Geraint", "Miguel", "Giorgio", "Marlene", "Ines", "Kajal", "Zhiyu", "Zeina", "Karl", "Gwyneth", "Joanna", "Lucia", "Cristiano", "Astrid", "Andres", "Vicki", "Mia", "Vitoria", "Bianca", "Chantal", "Raveena", "Daniel", "Amy", "Liam", "Ruth", "Kevin", "Brian", "Russell", "Aria", "Matthew", "Aditi", "Dora", "Enrique", "Hans", "Carmen", "Ivy", "Ewa", "Maja", "Gabrielle", "Nicole", "Filiz", "Camila", "Jacek", "Thiago", "Justin", "Celine", "Kazuha", "Kendra", "Arlet", "Ricardo", "Mads", "Hannah", "Mathieu", "Lea", "Sergio", "Hala", "Tatyana", "Penelope", "Naja", "Olivia", "Ruben", "Laura", "Takumi", "Mizuki", "Carla", "Conchita", "Jan", "Kimberly", "Liv", "Adriano", "Lupe", "Joey", "Pedro", "Seoyeon", "Emma", "Stephen"]
 
 session = Session()
 polly = session.client("polly")
@@ -17,7 +19,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='$', intents=intents)
-BOT_USER_ID = 1071587804938768474
+
+BOT_USER_ID = os.getenv("BOT_USER_ID")
 COG_NAME = "GhostOwnerCog"
 
 class GhostOwnerCog(Cog):
@@ -53,7 +56,7 @@ class GhostOwnerCog(Cog):
                                            VoiceId=self.speaker, Engine="neural")
         if "AudioStream" in response:
             with closing(response["AudioStream"]) as stream:
-                output = os.path.join("/", "home", "tadgh", "projects", "christine_is_sleeping", "result.mp3")
+                output = os.path.join(os.getcwd(), "result.mp3")
 
                 try:
                     # Open a file for writing the output as a binary stream
@@ -63,7 +66,7 @@ class GhostOwnerCog(Cog):
                     # Could not write to file, exit gracefully
                     print(error)
                     sys.exit(-1)
-        output = os.path.join("/", "home", "tadgh", "projects", "christine_is_sleeping", "result.mp3")
+        output = os.path.join(os.getcwd(), "result.mp3")
         self.voice_client.play(discord.FFmpegPCMAudio(output))
 
 
@@ -83,9 +86,11 @@ async def join(ctx: Context, speaker):
         member = guild.get_member(ctx.author.id)
         await guild.me.edit(nick=ctx.author.display_name + "-ghost")
         vc = await member.voice.channel.connect()
-        if not speaker:
-            speaker = "Matthew"
         speaker = speaker.split(" ")[0].capitalize()
+
+        if not speaker or speaker not in VOICES:
+            speaker = "Matthew"
+
         await bot.add_cog(GhostOwnerCog(bot, ctx.author, vc, speaker))
     else:
         await ctx.send("I'm already in a channel!")
@@ -103,21 +108,7 @@ async def leave(ctx):
 
 @bot.command()
 async def speakers(ctx):
-    await ctx.send(
-        """
-        Matthew
-        Kevin
-        Kimberly
-        Ivy
-        Joey
-        Aria
-        Kajal
-        Léa
-        Rémi
-        Arthur
-        Amy
-        """
-    )
+    await ctx.send(", ".join(VOICES))
 
 bot.run(BOT_KEY)
 
