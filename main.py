@@ -9,6 +9,8 @@ from discord.ext import commands
 from discord.ext.commands import Context, Cog
 import os
 
+from tts.TtsFactory import TtsFactory
+
 BOT_KEY = os.getenv("BOT_KEY")
 VOICES = ["Lotte", "Maxim", "Ayanda", "Salli", "Ola", "Arthur", "Tomoko", "Remi", "Geraint", "Miguel", "Giorgio", "Marlene", "Ines", "Kajal", "Zhiyu", "Zeina", "Karl", "Gwyneth", "Joanna", "Lucia", "Cristiano", "Astrid", "Andres", "Vicki", "Mia", "Vitoria", "Bianca", "Chantal", "Raveena", "Daniel", "Amy", "Liam", "Ruth", "Kevin", "Brian", "Russell", "Aria", "Matthew", "Aditi", "Dora", "Enrique", "Hans", "Carmen", "Ivy", "Ewa", "Maja", "Gabrielle", "Nicole", "Filiz", "Camila", "Jacek", "Thiago", "Justin", "Celine", "Kazuha", "Kendra", "Arlet", "Ricardo", "Mads", "Hannah", "Mathieu", "Lea", "Sergio", "Hala", "Tatyana", "Penelope", "Naja", "Olivia", "Ruben", "Laura", "Takumi", "Mizuki", "Carla", "Conchita", "Jan", "Kimberly", "Liv", "Adriano", "Lupe", "Joey", "Pedro", "Seoyeon", "Emma", "Stephen"]
 
@@ -30,6 +32,7 @@ class GhostOwnerCog(Cog):
         self.owner = owner
         self.voice_client = voice_client
         self.speaker = speaker
+        self.synthesizer = TtsFactory.get_engine("polly")
 
     @Cog.listener()
     async def on_message(self, message: Message):
@@ -52,24 +55,8 @@ class GhostOwnerCog(Cog):
 
 
     async def play_message_in_current_channel(self, message_content):
-        response = polly.synthesize_speech(Text=f"{message_content}", OutputFormat="mp3",
-                                           VoiceId=self.speaker, Engine="neural")
-        if "AudioStream" in response:
-            with closing(response["AudioStream"]) as stream:
-                output = os.path.join(os.getcwd(), "result.mp3")
-
-                try:
-                    # Open a file for writing the output as a binary stream
-                    with open(output, "wb") as file:
-                        file.write(stream.read())
-                except IOError as error:
-                    # Could not write to file, exit gracefully
-                    print(error)
-                    sys.exit(-1)
-        output = os.path.join(os.getcwd(), "result.mp3")
+        output = self.synthesizer.get_audio(message_content)
         self.voice_client.play(discord.FFmpegPCMAudio(output))
-
-
 
     async def cog_unload(self) -> None:
         """
