@@ -10,6 +10,7 @@ packages = [{include = "christine_is_sleeping"}]
 python = "^3.10"
 discord-py =  {version =  "^2.1.0", extras = ["voice"]}
 boto3 = "^1.26.64"
+python-dotenv = "^1.0.0"
 
 
 [build-system]
