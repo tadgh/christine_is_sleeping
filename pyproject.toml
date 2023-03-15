@@ -11,6 +11,7 @@ python = "^3.10"
 discord-py =  {version =  "^2.1.0", extras = ["voice"]}
 boto3 = "^1.26.64"
 python-dotenv = "^1.0.0"
+requests = "^2.28.2"
 
 
 [build-system]

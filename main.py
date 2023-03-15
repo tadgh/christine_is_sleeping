@@ -1,7 +1,3 @@
-import os
-import sys
-from contextlib import closing
-
 import discord
 from boto3 import Session
 from discord import VoiceClient, Message, Member, VoiceState
@@ -9,13 +5,14 @@ from discord.ext import commands
 from discord.ext.commands import Context, Cog
 import os
 
+from dotenv import load_dotenv
+
 from tts.TtsFactory import TtsFactory
+load_dotenv()
 
 BOT_KEY = os.getenv("BOT_KEY")
 VOICES = ["Lotte", "Maxim", "Ayanda", "Salli", "Ola", "Arthur", "Tomoko", "Remi", "Geraint", "Miguel", "Giorgio", "Marlene", "Ines", "Kajal", "Zhiyu", "Zeina", "Karl", "Gwyneth", "Joanna", "Lucia", "Cristiano", "Astrid", "Andres", "Vicki", "Mia", "Vitoria", "Bianca", "Chantal", "Raveena", "Daniel", "Amy", "Liam", "Ruth", "Kevin", "Brian", "Russell", "Aria", "Matthew", "Aditi", "Dora", "Enrique", "Hans", "Carmen", "Ivy", "Ewa", "Maja", "Gabrielle", "Nicole", "Filiz", "Camila", "Jacek", "Thiago", "Justin", "Celine", "Kazuha", "Kendra", "Arlet", "Ricardo", "Mads", "Hannah", "Mathieu", "Lea", "Sergio", "Hala", "Tatyana", "Penelope", "Naja", "Olivia", "Ruben", "Laura", "Takumi", "Mizuki", "Carla", "Conchita", "Jan", "Kimberly", "Liv", "Adriano", "Lupe", "Joey", "Pedro", "Seoyeon", "Emma", "Stephen"]
-
-session = Session()
-polly = session.client("polly")
+ENGINES = ["elevenlabs", "polly"]
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -27,12 +24,12 @@ COG_NAME = "GhostOwnerCog"
 
 class GhostOwnerCog(Cog):
 
-    def __init__(self, bot: commands.Bot, owner, voice_client: VoiceClient, speaker: str):
+    def __init__(self, bot: commands.Bot, owner, voice_client: VoiceClient, engine: str,  speaker: str):
         self.bot = bot
         self.owner = owner
         self.voice_client = voice_client
         self.speaker = speaker
-        self.synthesizer = TtsFactory.get_engine("polly")
+        self.synthesizer = TtsFactory.get_engine(engine, speaker)
 
     @Cog.listener()
     async def on_message(self, message: Message):
@@ -67,18 +64,25 @@ class GhostOwnerCog(Cog):
 
 
 @bot.command()
-async def join(ctx: Context, speaker):
+async def join(ctx: Context, engine, speaker):
     if not bot.get_cog(COG_NAME):
         guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
         member = guild.get_member(ctx.author.id)
         await guild.me.edit(nick=ctx.author.display_name + "-ghost")
         vc = await member.voice.channel.connect()
-        speaker = speaker.split(" ")[0].capitalize()
+        speaker = speaker.capitalize()
+
+
+        if not engine or engine not in ENGINES:
+            engine = "elevenlabs"
 
         if not speaker or speaker not in VOICES:
-            speaker = "Matthew"
+            # speaker = "21m00Tcm4TlvDq8ikWAM" // rachel
+            # speaker = "AZnzlk1XvdvUeBnXmlld" //Domi
+            # speaker = "ErXwobaYiN019PkySvjV" //Antoni
+            speaker = "TxGEqnHWrfWFTfGW9XjX"
 
-        await bot.add_cog(GhostOwnerCog(bot, ctx.author, vc, speaker))
+        await bot.add_cog(GhostOwnerCog(bot, ctx.author, vc, engine, speaker))
     else:
         await ctx.send("I'm already in a channel!")
 
