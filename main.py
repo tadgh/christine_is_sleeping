@@ -1,3 +1,5 @@
+import logging
+
 import discord
 from boto3 import Session
 from discord import VoiceClient, Message, Member, VoiceState
@@ -100,7 +102,7 @@ async def leave(ctx):
 @bot.command()
 async def speakers(ctx):
     await ctx.send(", ".join(VOICES))
-
-bot.run(BOT_KEY)
+handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+bot.run(BOT_KEY, log_handler=handler)
 
 
