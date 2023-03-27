@@ -17,7 +17,12 @@ VOICES = ["Lotte", "Maxim", "Ayanda", "Salli", "Ola", "Arthur", "Tomoko", "Remi"
 ENGINES = ["elevenlabs", "polly"]
 
 intents = discord.Intents.default()
-intents.message_content = True
+intents.message_content = False
+intents.typing = False
+intents.presences = False
+intents.members = False
+
+
 
 bot = commands.Bot(command_prefix='$', intents=intents)
 
@@ -31,6 +36,9 @@ class GhostOwnerCog(Cog):
         self.owner = owner
         self.voice_client = voice_client
         self.speaker = speaker
+        self.synthesizer = TtsFactory.get_engine(engine, speaker)
+
+    def swap_synthesizer(self, engine: str, speaker: str):
         self.synthesizer = TtsFactory.get_engine(engine, speaker)
 
     @Cog.listener()
@@ -88,6 +96,10 @@ async def join(ctx: Context, engine, speaker):
     else:
         await ctx.send("I'm already in a channel!")
 
+@bot.command()
+async def become(ctx):
+    cog: GhostOwnerCog = bot.get_cog()
+    cog.swap_synthesizer()
 
 @bot.command()
 async def leave(ctx):
@@ -102,7 +114,6 @@ async def leave(ctx):
 @bot.command()
 async def speakers(ctx):
     await ctx.send(", ".join(VOICES))
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
-bot.run(BOT_KEY, log_handler=handler)
+bot.run(BOT_KEY)
 
 
