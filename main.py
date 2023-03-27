@@ -17,7 +17,7 @@ VOICES = ["Lotte", "Maxim", "Ayanda", "Salli", "Ola", "Arthur", "Tomoko", "Remi"
 ENGINES = ["elevenlabs", "polly"]
 
 intents = discord.Intents.default()
-intents.message_content = False
+intents.message_content = True
 intents.typing = False
 intents.presences = False
 intents.members = False
@@ -48,6 +48,16 @@ class GhostOwnerCog(Cog):
         if message.author.id == self.owner.id:
             print(f'Message from {message.author}: {message.content}')
             await self.play_message_in_current_channel(message.content)
+
+    @commands.command()
+    async def become(self, ctx: Context, *, member: discord.Member = None):
+        member = member or ctx.author
+        if member is not self.owner:
+            await ctx.send("Ah ah ah, you didn't say the magic word.")
+            return
+
+        print("zoop")
+
 
     @Cog.listener()
     async def on_voice_state_update(self, member: Member, before: VoiceState, after: VoiceState):
@@ -97,7 +107,7 @@ async def join(ctx: Context, engine, speaker):
         await ctx.send("I'm already in a channel!")
 
 @bot.command()
-async def become(ctx):
+async def become(ctx, speaker):
     cog: GhostOwnerCog = bot.get_cog()
     cog.swap_synthesizer()
 
