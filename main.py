@@ -37,6 +37,7 @@ class GhostOwnerCog(Cog):
         self.voice_client = voice_client
         self.speaker = speaker
         self.synthesizer = TtsFactory.get_engine(engine, speaker)
+        print(f"Joined {voice_client.channel.name}")
 
     def swap_synthesizer(self, engine: str, speaker: str):
         self.synthesizer = TtsFactory.get_engine(engine, speaker)
