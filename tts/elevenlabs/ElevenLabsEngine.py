@@ -5,7 +5,18 @@ from contextlib import closing
 
 from tts.api.TtsEngine import TtsEngine
 from tts.elevenlabs.Client import Client
-
+VOICES = {
+    "Rachel": "21m00Tcm4TlvDq8ikWAM",
+    "Domi": "AZnzlk1XvdvUeBnXmlld",
+    "Bella": "EXAVITQu4vr4xnSDxMaL",
+    "Antoni": "ErXwobaYiN019PkySvjV",
+    "Elli": "MF3mGyEYCl7XYWbV9V6O",
+    "Josh": "TxGEqnHWrfWFTfGW9XjX",
+    "Arnold": "VR6AewLTigWG4xSOukaG",
+    "Adam": "pNInz6obpgDQGcFmaJgB",
+    "Sam": "yoZ06aMxZJJ28mfd3POQ",
+    "Gary": "d9lgN8bDCShlVPABrBCa"
+}
 
 class ElevenLabsEngine(TtsEngine):
     def __init__(self, speaker: str):
@@ -19,4 +30,10 @@ class ElevenLabsEngine(TtsEngine):
         with open(output, "wb") as file:
             file.write(response.content)
         return output
+
+    @staticmethod
+    def get_speaker_dict() -> dict:
+        return VOICES
+
+
 
