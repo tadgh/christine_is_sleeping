@@ -1,35 +1,52 @@
-import os
-import sys
-from contextlib import closing
+import itertools
+import logging
+from typing import Any
 
 import discord
 from boto3 import Session
-from discord import VoiceClient, Message, Member, VoiceState
+from discord import VoiceClient, Message, Member, VoiceState, Component, ActionRow, VoiceChannel, Interaction, \
+    InteractionResponse, Client
+from discord._types import ClientT
 from discord.ext import commands
-from discord.ext.commands import Context, Cog
+from discord.ext.commands import Context, Cog, Bot
 import os
 
-BOT_KEY = os.getenv("BOT_KEY")
-VOICES = ["Lotte", "Maxim", "Ayanda", "Salli", "Ola", "Arthur", "Tomoko", "Remi", "Geraint", "Miguel", "Giorgio", "Marlene", "Ines", "Kajal", "Zhiyu", "Zeina", "Karl", "Gwyneth", "Joanna", "Lucia", "Cristiano", "Astrid", "Andres", "Vicki", "Mia", "Vitoria", "Bianca", "Chantal", "Raveena", "Daniel", "Amy", "Liam", "Ruth", "Kevin", "Brian", "Russell", "Aria", "Matthew", "Aditi", "Dora", "Enrique", "Hans", "Carmen", "Ivy", "Ewa", "Maja", "Gabrielle", "Nicole", "Filiz", "Camila", "Jacek", "Thiago", "Justin", "Celine", "Kazuha", "Kendra", "Arlet", "Ricardo", "Mads", "Hannah", "Mathieu", "Lea", "Sergio", "Hala", "Tatyana", "Penelope", "Naja", "Olivia", "Ruben", "Laura", "Takumi", "Mizuki", "Carla", "Conchita", "Jan", "Kimberly", "Liv", "Adriano", "Lupe", "Joey", "Pedro", "Seoyeon", "Emma", "Stephen"]
+from dotenv import load_dotenv
 
-session = Session()
-polly = session.client("polly")
+from tts.TtsFactory import TtsFactory
+from tts.api.TtsEngine import TtsEngine
+from tts.elevenlabs.ElevenLabsEngine import ElevenLabsEngine
+from tts.polly.PollyEngine import PollyEngine
+
+load_dotenv()
+
+BOT_KEY = os.getenv("BOT_KEY")
+ENGINES = ["elevenlabs", "polly"]
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.typing = False
+intents.presences = False
+intents.members = False
 
-bot = commands.Bot(command_prefix='$', intents=intents)
+bot: Bot = commands.Bot(command_prefix='$', intents=intents)
 
 BOT_USER_ID = os.getenv("BOT_USER_ID")
 COG_NAME = "GhostOwnerCog"
 
+
 class GhostOwnerCog(Cog):
 
-    def __init__(self, bot: commands.Bot, owner, voice_client: VoiceClient, speaker: str):
+    def __init__(self, bot: commands.Bot, owner: Member):
         self.bot = bot
         self.owner = owner
-        self.voice_client = voice_client
-        self.speaker = speaker
+        self.synthesizer: TtsEngine = None
+        self.voice_channel = None
+        self.voice_client = None
+        print(f"Cog created in server {owner.guild}!")
+
+    def is_connected(self) -> bool:
+        return self.voice_client is not None
 
     @Cog.listener()
     async def on_message(self, message: Message):
@@ -50,50 +67,146 @@ class GhostOwnerCog(Cog):
                 await self.voice_client.disconnect()
                 self.voice_client = await after.channel.connect()
 
+    def set_voice_channel(self, voice_channel: VoiceChannel):
+        self.voice_channel = voice_channel
+
+    async def join_current_voice_channel(self, ctx: Context):
+        if self.voice_channel is None:
+            await ctx.send("Sorry, I can't join the voice channel you're in, since you aren't in one!")
+            return
+
+        if not self.voice_client:
+            self.voice_client = await self.voice_channel.connect()
+            return
+
+        if self.voice_client and self.voice_client.channel != self.voice_channel:
+            print(f"Connecting to channel {self.voice_channel}")
+            await self.voice_client.disconnect()
+            self.voice_client = await self.voice_channel.connect()
+            return
 
     async def play_message_in_current_channel(self, message_content):
-        response = polly.synthesize_speech(Text=f"{message_content}", OutputFormat="mp3",
-                                           VoiceId=self.speaker, Engine="neural")
-        if "AudioStream" in response:
-            with closing(response["AudioStream"]) as stream:
-                output = os.path.join(os.getcwd(), "result.mp3")
+        if not self.synthesizer:
+            print("Failure!")
+            return
 
-                try:
-                    # Open a file for writing the output as a binary stream
-                    with open(output, "wb") as file:
-                        file.write(stream.read())
-                except IOError as error:
-                    # Could not write to file, exit gracefully
-                    print(error)
-                    sys.exit(-1)
-        output = os.path.join(os.getcwd(), "result.mp3")
+        output = self.synthesizer.get_audio(message_content)
         self.voice_client.play(discord.FFmpegPCMAudio(output))
 
-
+    async def cog_load(self) -> None:
+        """
+        Setup Method
+        """
+        pass
 
     async def cog_unload(self) -> None:
         """
         Teardown method
         """
-        await self.play_message_in_current_channel("Goodbye!")
-        await self.voice_client.disconnect()
+        if self.voice_client:
+            await self.play_message_in_current_channel("Goodbye!")
+            await self.voice_client.disconnect()
+
+    def set_tts_engine(self, ttsEngine: TtsEngine):
+        self.synthesizer = ttsEngine
 
 
 @bot.command()
-async def join(ctx: Context, speaker):
+async def swap(ctx: Context):
+    cog = bot.get_cog(COG_NAME)
+    if cog:
+        await ctx.send(view=SpeakerView(ENGINES, cog))
+    else:
+        await ctx.send("Sorry, no cog available to swap voices on!")
+
+
+class SpeakerView(discord.ui.View):
+    def __init__(self, engines, cog):
+        super().__init__()
+        self.cog = cog
+        self.current_speaker_dropdown = None
+        self.current_api_dropdown = ApiDropDown(engines, self)
+        self.add_item(self.current_api_dropdown)
+
+    def api_selected(self, option):
+        self.remove_item(self.current_api_dropdown)
+        engine = option
+        print(f"Found engine {engine} selected, adding dropdown for it.")
+        if engine.lower() == "polly":
+            voices = PollyEngine.get_speaker_dict()
+        elif engine.lower() == "elevenlabs":
+            voices = ElevenLabsEngine.get_speaker_dict()
+        else:
+            voices = {}
+
+        if len(voices.keys()) > 25:
+            print(f"Truncating voices from {len(voices.keys())} to 25")
+            voices = dict(itertools.islice(voices.items(), 25))
+        self.add_item(SpeakerDropdown(engine, voices, cog=self.cog))
+
+
+class ApiDropDown(discord.ui.Select):
+    def __init__(self, engines: list, parent: SpeakerView):
+        self.parent_view = parent
+        options = [self._generate_api_option(engine) for engine in engines]
+        super().__init__(placeholder="Select an API", options=options)
+
+    def _generate_api_option(self, engine):
+        return discord.SelectOption(label=engine, value=engine)
+
+    async def callback(self, interaction: Interaction[ClientT]) -> Any:
+        option = self.values[0]
+        self.parent_view.api_selected(option)
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class SpeakerDropdown(discord.ui.Select):
+    def __init__(self, engine, speakers_for_api: dict, cog):
+        options = [self._generate_speaker_option(display, identifier) for display, identifier in
+                   speakers_for_api.items()]
+        self.engine = engine
+        self.cog: GhostOwnerCog = cog
+        super().__init__(placeholder="Choose your speaker", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        for option in self.options:
+            if option.value == self.values[0]:
+                name = option.label
+                engine = TtsFactory.get_engine(self.engine, self.values[0])
+                self.cog.set_tts_engine(engine)
+                if not bot.get_cog(COG_NAME):
+                    await bot.add_cog(self.cog)
+                await interaction.response.edit_message(content=f"OK, I am  now {name}", view=None)
+
+    def _generate_speaker_option(self, display, identifier):
+        return discord.SelectOption(label=display, value=identifier, description=display + "woo", emoji='🟥')
+
+
+@bot.command()
+async def join(ctx: Context):
+    cog = bot.get_cog(COG_NAME)
+    if cog:
+        if not cog.is_connected():
+            guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
+            member = guild.get_member(ctx.author.id)
+            await guild.me.edit(nick=ctx.author.display_name + "-ghost")
+            channel = member.voice.channel
+            cog.set_voice_channel(channel)
+            await cog.join_current_voice_channel(ctx)
+        else:
+            await ctx.send("I am already connected to the channel!")
+    else:
+        await ctx.send("Please call `$init` first to setup your speaker")
+
+
+@bot.command()
+async def init(ctx: Context):
     if not bot.get_cog(COG_NAME):
         guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
         member = guild.get_member(ctx.author.id)
         await guild.me.edit(nick=ctx.author.display_name + "-ghost")
-        vc = await member.voice.channel.connect()
-        speaker = speaker.split(" ")[0].capitalize()
-
-        if not speaker or speaker not in VOICES:
-            speaker = "Matthew"
-
-        await bot.add_cog(GhostOwnerCog(bot, ctx.author, vc, speaker))
-    else:
-        await ctx.send("I'm already in a channel!")
+        cog = GhostOwnerCog(bot, member)
+        await ctx.send(view=SpeakerView(ENGINES, cog))
 
 
 @bot.command()
@@ -106,10 +219,10 @@ async def leave(ctx):
     else:
         await ctx.send("I'm not currently in a channel!")
 
+
 @bot.command()
 async def speakers(ctx):
     await ctx.send(", ".join(VOICES))
 
+
 bot.run(BOT_KEY)
-
-
