@@ -1,9 +1,11 @@
+import itertools
 import logging
 from typing import Any
 
 import discord
 from boto3 import Session
-from discord import VoiceClient, Message, Member, VoiceState, Component, ActionRow, VoiceChannel, Interaction
+from discord import VoiceClient, Message, Member, VoiceState, Component, ActionRow, VoiceChannel, Interaction, \
+    InteractionResponse, Client
 from discord._types import ClientT
 from discord.ext import commands
 from discord.ext.commands import Context, Cog, Bot
@@ -42,6 +44,9 @@ class GhostOwnerCog(Cog):
         self.voice_channel = None
         self.voice_client = None
         print(f"Cog created in server {owner.guild}!")
+
+    def is_connected(self) -> bool:
+        return self.voice_client is not None
 
     @Cog.listener()
     async def on_message(self, message: Message):
@@ -93,13 +98,14 @@ class GhostOwnerCog(Cog):
         Setup Method
         """
         pass
+
     async def cog_unload(self) -> None:
         """
         Teardown method
         """
         if self.voice_client:
-            await self.voice_client.disconnect()
             await self.play_message_in_current_channel("Goodbye!")
+            await self.voice_client.disconnect()
 
     def set_tts_engine(self, ttsEngine: TtsEngine):
         self.synthesizer = ttsEngine
@@ -109,7 +115,7 @@ class GhostOwnerCog(Cog):
 async def swap(ctx: Context):
     cog = bot.get_cog(COG_NAME)
     if cog:
-        await ctx.send(view=SpeakerView(VOICES, cog))
+        await ctx.send(view=SpeakerView(ENGINES, cog))
     else:
         await ctx.send("Sorry, no cog available to swap voices on!")
 
@@ -119,12 +125,11 @@ class SpeakerView(discord.ui.View):
         super().__init__()
         self.cog = cog
         self.current_speaker_dropdown = None
-        self.add_item(ApiDropDown(engines, self))
+        self.current_api_dropdown = ApiDropDown(engines, self)
+        self.add_item(self.current_api_dropdown)
 
     def api_selected(self, option):
-        if self.current_speaker_dropdown:
-            self.remove_item(self.current_speaker_dropdown)
-
+        self.remove_item(self.current_api_dropdown)
         engine = option
         print(f"Found engine {engine} selected, adding dropdown for it.")
         if engine.lower() == "polly":
@@ -134,8 +139,10 @@ class SpeakerView(discord.ui.View):
         else:
             voices = {}
 
+        if len(voices.keys()) > 25:
+            print(f"Truncating voices from {len(voices.keys())} to 25")
+            voices = dict(itertools.islice(voices.items(), 25))
         self.add_item(SpeakerDropdown(engine, voices, cog=self.cog))
-
 
 
 class ApiDropDown(discord.ui.Select):
@@ -150,13 +157,13 @@ class ApiDropDown(discord.ui.Select):
     async def callback(self, interaction: Interaction[ClientT]) -> Any:
         option = self.values[0]
         self.parent_view.api_selected(option)
-        await interaction.message.edit(view=self.parent_view)
-        return
+        await interaction.response.edit_message(view=self.parent_view)
 
 
 class SpeakerDropdown(discord.ui.Select):
     def __init__(self, engine, speakers_for_api: dict, cog):
-        options = [self._generate_speaker_option(display, identifier) for display, identifier in speakers_for_api.items()]
+        options = [self._generate_speaker_option(display, identifier) for display, identifier in
+                   speakers_for_api.items()]
         self.engine = engine
         self.cog: GhostOwnerCog = cog
         super().__init__(placeholder="Choose your speaker", options=options)
@@ -167,26 +174,29 @@ class SpeakerDropdown(discord.ui.Select):
                 name = option.label
                 engine = TtsFactory.get_engine(self.engine, self.values[0])
                 self.cog.set_tts_engine(engine)
-                await bot.add_cog(self.cog)
-                await interaction.response.send_message(f'OK, I am  now {name}')
-
+                if not bot.get_cog(COG_NAME):
+                    await bot.add_cog(self.cog)
+                await interaction.response.edit_message(content=f"OK, I am  now {name}", view=None)
 
     def _generate_speaker_option(self, display, identifier):
         return discord.SelectOption(label=display, value=identifier, description=display + "woo", emoji='🟥')
 
 
 @bot.command()
-async def join2(ctx: Context):
+async def join(ctx: Context):
     cog = bot.get_cog(COG_NAME)
     if cog:
-        guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
-        member = guild.get_member(ctx.author.id)
-        await guild.me.edit(nick=ctx.author.display_name + "-ghost")
-        channel = member.voice.channel
-        cog.set_voice_channel(channel)
-        await cog.join_current_voice_channel(ctx)
+        if not cog.is_connected():
+            guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
+            member = guild.get_member(ctx.author.id)
+            await guild.me.edit(nick=ctx.author.display_name + "-ghost")
+            channel = member.voice.channel
+            cog.set_voice_channel(channel)
+            await cog.join_current_voice_channel(ctx)
+        else:
+            await ctx.send("I am already connected to the channel!")
     else:
-        print("zoop")
+        await ctx.send("Please call `$init` first to setup your speaker")
 
 
 @bot.command()
@@ -195,32 +205,8 @@ async def init(ctx: Context):
         guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
         member = guild.get_member(ctx.author.id)
         await guild.me.edit(nick=ctx.author.display_name + "-ghost")
-        voice_channel = member.voice.channel
         cog = GhostOwnerCog(bot, member)
         await ctx.send(view=SpeakerView(ENGINES, cog))
-
-
-@bot.command()
-async def join(ctx: Context, engine, speaker):
-    if not bot.get_cog(COG_NAME):
-        guild = bot.get_guild(ctx.author.mutual_guilds[0].id)
-        member = guild.get_member(ctx.author.id)
-        await guild.me.edit(nick=ctx.author.display_name + "-ghost")
-        vc = await member.voice.channel.connect()
-        speaker = speaker.capitalize()
-
-        if not engine or engine not in ENGINES:
-            engine = "elevenlabs"
-
-        if not speaker or speaker not in VOICES:
-            # speaker = "21m00Tcm4TlvDq8ikWAM" // rachel
-            # speaker = "AZnzlk1XvdvUeBnXmlld" //Domi
-            # speaker = "ErXwobaYiN019PkySvjV" //Antoni
-            speaker = "TxGEqnHWrfWFTfGW9XjX"
-
-        await bot.add_cog(GhostOwnerCog(bot, ctx.author, vc, engine, speaker))
-    else:
-        await ctx.send("I'm already in a channel!")
 
 
 @bot.command()
